@@ -9,7 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.2/dist/ethers.umd.min.js"></script>
   <style>
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;line-height:1.4;margin:24px;background:#fafafa;color:#111}
-    .card{background:white;padding:18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.06);max-width:900px;margin:auto}
+    .card{background:white;padding:18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.06);max-width:980px;margin:auto}
     header{display:flex;gap:12px;align-items:center;margin-bottom:12px}
     button.primary{background:#2563eb;color:white;padding:10px 14px;border-radius:8px;border:0;cursor:pointer}
     button:disabled{opacity:0.6;cursor:not-allowed}
@@ -31,6 +31,7 @@
       </div>
       <div style="margin-left:auto;text-align:right">
         <div id="walletStatus" class="small muted">Not connected</div>
+        <!-- Put your contract address here. Lowercase is fine; script will checksum it -->
         <div id="contractAddr" class="small muted">0xE3e7fc9b468519B911c114F377C6d45e21Ac4284</div>
       </div>
     </header>
@@ -46,7 +47,7 @@
         <div style="margin-bottom:12px">
           <button id="pingBtn">Send ping()</button>
           <button id="setMsgBtn" style="margin-left:8px">setMessage()</button>
-          <input id="msgInput" type="text" placeholder="Message to set" style="display:inline-block;margin-left:8px;width:240px" />
+          <input id="msgInput" type="text" placeholder="Message to set" style="display:inline-block;margin-left:8px;width:240px" value="yes Web3" />
         </div>
 
         <div style="margin-bottom:12px">
@@ -69,6 +70,7 @@
   <!-- Inline script (uses global ethers from the UMD bundle above) -->
   <script>
   (async function(){
+    // ABI & initial values
     const abi = [
       "event ActionLogged(address indexed user, string message, uint256 timestamp)",
       "function ping() public",
@@ -76,7 +78,34 @@
       "function message() public view returns (string)"
     ];
 
-    const contractAddress = document.getElementById('contractAddr').innerText.trim();
+    // Read contract address from DOM and normalize/checksum it safely
+    const contractAddrEl = document.getElementById('contractAddr');
+    let contractAddressRaw = (contractAddrEl && contractAddrEl.innerText) ? contractAddrEl.innerText.trim() : '';
+    if (!contractAddressRaw) {
+      console.error('No contract address found in #contractAddr');
+      contractAddressRaw = '';
+    }
+
+    // Normalize & validate using ethers.getAddress() with fallback to lowercase
+    let contractAddress;
+    try {
+      // try to produce checksummed address
+      contractAddress = ethers.getAddress(contractAddressRaw);
+      // update UI with canonical checksummed address
+      contractAddrEl.innerText = contractAddress;
+    } catch (err) {
+      console.warn('Address checksum invalid or mixed-case. Falling back to lowercase and attempting to normalize. Original:', contractAddressRaw);
+      const lower = contractAddressRaw.toLowerCase();
+      try {
+        // this will normally succeed if the address is valid hex
+        contractAddress = ethers.getAddress(lower);
+        contractAddrEl.innerText = contractAddress; // show checksummed result
+      } catch (err2) {
+        console.error('Address still invalid after lowercasing. Using lowercase string as-is:', err2);
+        // Use the lower string as last resort (ethers will still accept lowercase addresses)
+        contractAddress = lower;
+      }
+    }
 
     let provider, signer, contract;
 
@@ -91,24 +120,13 @@
     const clearEventsBtn = document.getElementById('clearEvents');
     const debugPre = document.getElementById('debug');
 
-    function short(a){return a.slice(0,6)+"..."+a.slice(-4);}    
+    function short(a){ return a.slice(0,6) + "..." + a.slice(-4); }
     function logDebug(...args){
-      try{ console.log(...args); debugPre.innerText += '\n' + args.map(a=>typeof a==='string'?a:JSON.stringify(a)).join(' '); debugPre.scrollTop = debugPre.scrollHeight;}catch(e){}
-    }
-
-    function addEvent(e){
-      const el=document.createElement('div');
-      el.className='evt';
-      const time=new Date(Number(e.timestamp)*1000).toLocaleString();
-      el.innerHTML=`<div><strong>${e.message}</strong></div><div class="small">by ${short(e.user)} • ${time}</div>`;
-      eventsDiv.prepend(el);
-    }
-
-    async function attach(){
-      provider = new ethers.BrowserProvider(window.ethereum);
-      signer = await provider.getSigner();
-      contract = new ethers.Contract(contractAddress, abi, signer);
-      logDebug('attach: provider & contract ready');
+      try{
+        console.log(...args);
+        debugPre.innerText += '\n' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
+        debugPre.scrollTop = debugPre.scrollHeight;
+      }catch(e){}
     }
 
     function toast(msg){
@@ -118,12 +136,29 @@
         t.style.background='rgba(0,0,0,0.85)'; t.style.color='white'; t.style.padding='10px 12px'; t.style.borderRadius='8px';
         t.style.boxShadow='0 6px 18px rgba(0,0,0,0.2)'; t.textContent = msg; document.body.appendChild(t);
         setTimeout(()=> t.style.opacity='0',3500); setTimeout(()=> t.remove(),4200);
-      }catch(e){console.error(e)}
+      }catch(e){}
+    }
+
+    function addEvent(e){
+      const el = document.createElement('div');
+      el.className = 'evt';
+      const time = new Date(Number(e.timestamp)*1000).toLocaleString();
+      el.innerHTML = `<div><strong>${e.message}</strong></div><div class="small">by ${short(e.user)} • ${time}</div>`;
+      eventsDiv.prepend(el);
+    }
+
+    async function attach(){
+      // provider & contract initialization
+      if (!window.ethereum) throw new Error('MetaMask not found (window.ethereum missing).');
+      provider = new ethers.BrowserProvider(window.ethereum);
+      signer = await provider.getSigner();
+      contract = new ethers.Contract(contractAddress, abi, signer);
+      logDebug('attach: provider & contract ready', contractAddress);
     }
 
     async function connectWallet(){
       try{
-        const accounts = await window.ethereum.request({method: 'eth_requestAccounts'});
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
         await attach();
         walletStatus.innerText = 'Connected: ' + short(accounts[0]);
         connectBtn.innerText = 'Connected';
@@ -131,7 +166,7 @@
         readCurrentMessage();
         listenEvents();
         logDebug('Connected', accounts[0]);
-      }catch(e){
+      } catch(e){
         console.error('connectWallet error ->', e);
         logDebug('connectWallet error ->', e.message || e);
         toast('MetaMask connection failed (see console)');
@@ -144,7 +179,10 @@
         const receipt = await tx.wait();
         toast('Ping tx: ' + receipt.transactionHash);
         logDebug('ping tx', receipt.transactionHash);
-      }catch(e){ console.error(e); toast('Ping failed (see console)'); }
+      }catch(e){
+        console.error('sendPing error ->', e);
+        toast('Ping failed (see console)');
+      }
     }
 
     async function doSetMessage(){
@@ -156,14 +194,26 @@
         toast('setMessage tx: ' + receipt.transactionHash);
         msgInput.value = '';
         readCurrentMessage();
-      }catch(e){ console.error(e); toast('setMessage failed (see console)'); }
+        logDebug('setMessage tx', receipt.transactionHash);
+      }catch(e){
+        console.error('doSetMessage error ->', e);
+        // Specific handling for bad checksum error - just log and show toast
+        if (e && e.code === 'INVALID_ARGUMENT' && /checksum/i.test(String(e.message))) {
+          toast('Contract address checksum invalid - see console');
+        } else {
+          toast('setMessage failed (see console)');
+        }
+      }
     }
 
     async function readCurrentMessage(){
       try{
         const m = await contract.message();
         document.getElementById('currentMessage').innerText = m || '(empty)';
-      }catch(e){ console.error(e); }
+      }catch(e){
+        console.error('readCurrentMessage error ->', e);
+        toast('Read message failed (see console)');
+      }
     }
 
     async function fetchPastEvents(){
@@ -176,21 +226,43 @@
           const parsed = iface.parseLog(log);
           addEvent({ user: parsed.args.user, message: parsed.args.message, timestamp: parsed.args.timestamp.toString() });
         }
-      }catch(e){ console.error('fetchPastEvents error ->', e); }
+      }catch(e){
+        console.error('fetchPastEvents error ->', e);
+        toast('Fetching events failed (see console)');
+      }
     }
 
     function listenEvents(){
-      contract.on('ActionLogged', (user, message, timestamp) => {
-        addEvent({ user, message, timestamp: timestamp.toString() });
-      });
+      try {
+        contract.on('ActionLogged', (user, message, timestamp) => {
+          addEvent({ user, message, timestamp: timestamp.toString() });
+        });
+      } catch (e) {
+        console.error('listenEvents error ->', e);
+      }
     }
 
+    // wire up buttons
     connectBtn.onclick = connectWallet;
     pingBtn.onclick = sendPing;
     setMsgBtn.onclick = doSetMessage;
     readMsgBtn.onclick = readCurrentMessage;
     refreshEventsBtn.onclick = () => { eventsDiv.innerHTML = ''; fetchPastEvents(); };
     clearEventsBtn.onclick = () => { eventsDiv.innerHTML = ''; };
+
+    // optional: auto-check provider if already injected (try to attach silently)
+    if (window.ethereum && window.ethereum.selectedAddress) {
+      // try a silent attach (no prompt)
+      try {
+        await attach();
+        walletStatus.innerText = 'Connected (silent): ' + short(window.ethereum.selectedAddress);
+        connectBtn.innerText = 'Connected';
+        connectBtn.disabled = true;
+        logDebug('Auto-attached to provider', window.ethereum.selectedAddress);
+      } catch (e) {
+        // ignore
+      }
+    }
 
   })();
   </script>
