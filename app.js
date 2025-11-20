@@ -35,6 +35,40 @@ function normalize(addr) {
   const readMsgBtn = document.getElementById("readMsg");
   const eventsDiv = document.getElementById("events");
 
+    // SIM Token Controls
+const showSimBalanceBtn = document.getElementById("showSimBalanceBtn");
+const simBalanceEl = document.getElementById("simBalance");
+const sendSimBtn = document.getElementById("sendSimBtn");
+
+showSimBalanceBtn.onclick = async () => {
+  try {
+    const address = await signer.getAddress();
+    const info = await window.simToken.getTokenInfo(address);
+    simBalanceEl.innerText = info.balance;
+  } catch(err) {
+    console.error("SIM balance error", err);
+    alert("Error fetching SIM balance (see console)");
+  }
+};
+
+sendSimBtn.onclick = async () => {
+  try {
+    const to = document.getElementById("simRecipient").value.trim();
+    const amt = document.getElementById("simAmount").value.trim();
+    
+    if (!to || !amt) {
+      alert("Enter recipient + amount");
+      return;
+    }
+    
+    const tx = await window.simToken.sendTokens(to, amt);
+    alert("SIM sent! Tx: " + tx.hash);
+  } catch(err) {
+    console.error("SIM send failed", err);
+    alert("Sending SIM failed (see console)");
+  }
+};
+
   let provider, signer, contract;
 
   function short(a) { return a.slice(0,6) + "..." + a.slice(-4); }
