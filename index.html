@@ -1,28 +1,12 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EventDemo DApp</title>
-
-    <!-- Paste this EXACTLY here -->
-    <link rel="icon" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="100%" height="100%" fill="%23007ACC"/><text x="50%" y="55%" font-size="18" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold">S</text></svg>'>
-    <!-- End of favicon -->
-
-    <!-- Your existing CSS / JS links continue below -->
-</head>
-<body>
-
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>EventDemo dApp (Fixed)</title>
-  <link rel="icon" href="/favicon.ico" />
 
-  <!-- Load ethers (UMD build ensures window.ethers exists) -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+  <!-- inline SVG favicon (no 404) -->
+  <link rel="icon" href='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="100%" height="100%" fill="%23007ACC"/><text x="50%" y="55%" font-size="18" text-anchor="middle" fill="white" font-family="Arial" font-weight="bold">S</text></svg>'>
 
   <!-- Styles -->
   <style>
@@ -40,7 +24,6 @@
     pre{background:#f7f7f7;padding:8px;border-radius:6px}
   </style>
 </head>
-
 <body>
   <div class="card">
     <header>
@@ -50,17 +33,15 @@
       </div>
       <div style="margin-left:auto;text-align:right">
         <div id="walletStatus" class="small muted">Not connected</div>
-
-        <!-- your EventDemo contract address -->
         <div id="contractAddr" class="small muted">0xE3e7fc9b468519B911c114F377C6d45e21Ac4284</div>
       </div>
     </header>
 
     <div class="grid">
       <div>
-
         <div style="margin-bottom:12px">
-          <button id="connectBtn" class="primary">Connect Wallet</button>
+          <!-- changed id to 'connect' to match helper JS -->
+          <button id="connect" class="primary">Connect Wallet</button>
           <button id="refreshEvents" style="margin-left:8px">Refresh Events</button>
           <button id="clearEvents" style="margin-left:8px">Clear Events</button>
         </div>
@@ -81,18 +62,20 @@
 
         <h3>SIM Token</h3>
 
-<div style="margin-bottom:12px">
-  <button id="showSimBalanceBtn">Show SIM Balance</button>
-  <div style="margin-top:8px">
-    Balance: <span id="simBalance" class="muted">0</span> SIM
-  </div>
-</div>
+        <div style="margin-bottom:12px">
+          <!-- changed id to match helper -->
+          <button id="show-sim-balance">Show SIM Balance</button>
+          <div style="margin-top:8px">
+            Balance: <span id="sim-balance" class="muted">0</span> SIM
+          </div>
+        </div>
 
-<div style="margin-bottom:12px">
-  <input id="simRecipient" type="text" placeholder="Recipient address" style="width:240px; margin-right:8px;">
-  <input id="simAmount" type="text" placeholder="Amount" style="width:120px; margin-right:8px;">
-  <button id="sendSimBtn">Send SIM</button>
-</div>
+        <div style="margin-bottom:12px">
+          <!-- inputs named / id'd to match helper code -->
+          <input id="sim-to" name="toAddress" type="text" placeholder="Recipient address" style="width:240px; margin-right:8px;">
+          <input id="sim-amount" name="simAmount" type="text" placeholder="Amount" style="width:120px; margin-right:8px;">
+          <button id="send-sim">Send SIM</button>
+        </div>
 
       </div>
 
@@ -104,10 +87,11 @@
     </div>
   </div>
 
-  <!-- load your SIM token script -->
-  <script src="token.js"></script>
+  <!-- load ethers v6 — use the official browser bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.0/dist/ethers.umd.min.js"></script>
 
-  <!-- load the EventDemo dApp script -->
+  <!-- load your SIM token helper and dApp scripts (ensure these filenames exist in repo) -->
+  <script src="token.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
