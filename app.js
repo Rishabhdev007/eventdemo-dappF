@@ -1,11 +1,6 @@
-// --- START: Safe SIM balance / token helper (ethers v6) ---
-// Make sure to include ethers v6 in your HTML (index.html):
-// <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.0/dist/ethers.umd.min.js"></script>
+// ------------------- SIM TOKEN SETTINGS -------------------
+const TOKEN_ADDRESS = "0xFd65C5871955aaDcd34955980eC9F28aA52378Ab"; // SIM on Sepolia
 
-// SIM token address you deployed:
-const TOKEN_ADDRESS = "0xFd65C5871955aaDcd34955980eC9F28aA52378Ab"; // SIM token contract (Sepolia)
-
-// Minimal ERC20 ABI
 const MIN_ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
@@ -14,130 +9,158 @@ const MIN_ERC20_ABI = [
 ];
 
 let provider, signer, userAddress, simContract;
-let initialized = false;
 let simDecimals = 18;
+let initialized = false;
 
+
+// ------------------- INIT WALLET + CONTRACT -------------------
 async function initWalletAndContract() {
-  try {
-    if (!window.ethereum) throw new Error("No Web3 wallet found (window.ethereum is undefined)");
-
-    provider = new ethers.BrowserProvider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    signer = await provider.getSigner();
-    userAddress = await signer.getAddress();
-
-    // validate SIM token address
-    ethers.getAddress(TOKEN_ADDRESS);
-
-    // Initialize contract
-    simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, provider);
-
-    try { simDecimals = await simContract.decimals(); } catch (e) { simDecimals = 18; }
-    try { const sym = await simContract.symbol(); console.log("Token symbol:", sym); } catch (e) {}
-
-    initialized = true;
-    console.log("initWalletAndContract OK", { userAddress, token: TOKEN_ADDRESS, decimals: simDecimals });
-  } catch (err) {
-    console.error("initWalletAndContract error:", err);
-    throw err;
+  if (!window.ethereum) {
+    alert("No MetaMask found!");
+    throw new Error("MetaMask missing");
   }
+
+  provider = new ethers.BrowserProvider(window.ethereum);
+  await provider.send("eth_requestAccounts", []);
+  signer = await provider.getSigner();
+  userAddress = await signer.getAddress();
+
+  console.log("Connected wallet:", userAddress);
+
+  ethers.getAddress(TOKEN_ADDRESS); // validate address
+
+  simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, provider);
+
+  try { simDecimals = await simContract.decimals(); }
+  catch { simDecimals = 18; }
+
+  try { console.log("Token symbol:", await simContract.symbol()); }
+  catch {}
+
+  initialized = true;
+  return true;
 }
 
-async function getTokenInfo(address) {
+
+// ------------------- READ SIM BALANCE -------------------
+async function getTokenInfo(holder) {
   if (!initialized) await initWalletAndContract();
-  const raw = await simContract.balanceOf(address);
+
+  const raw = await simContract.balanceOf(holder);
   const formatted = ethers.formatUnits(raw, simDecimals);
+
   let symbol = "SIM";
-  try { symbol = await simContract.symbol(); } catch (e) {}
-  return { raw, formatted, symbol, decimals: simDecimals };
+  try { symbol = await simContract.symbol(); } catch {}
+
+  return { raw, formatted, symbol };
 }
 
+
+// ------------------- SEND SIM TOKENS -------------------
 async function sendSim(toAddress, amountHuman) {
   if (!initialized) await initWalletAndContract();
+
+  if (!toAddress || !amountHuman) throw new Error("Missing address or amount");
+
+  const myAddr = await signer.getAddress();
+  if (myAddr.toLowerCase() === TOKEN_ADDRESS.toLowerCase()) {
+    throw new Error("Cannot send from contract address. Switch wallet.");
+  }
+
   const contractWithSigner = simContract.connect(signer);
   const amountParsed = ethers.parseUnits(amountHuman.toString(), simDecimals);
+
+  console.log("Sending SIM:", amountHuman, "to", toAddress);
+
   const tx = await contractWithSigner.transfer(toAddress, amountParsed);
+  alert("Transaction sent: " + tx.hash);
+
   await tx.wait();
-  console.log("Send SIM tx mined:", tx.hash);
+  console.log("Transaction mined:", tx.hash);
+
   return tx;
 }
 
-// --- UI WIRING ---
+
+// ------------------- UI HANDLERS -------------------
 document.addEventListener("DOMContentLoaded", () => {
+
   const connectBtn = document.getElementById("connect");
-  const showSimBalanceBtn = document.getElementById("show-sim-balance");
+  const showBalanceBtn = document.getElementById("show-sim-balance");
   const balanceEl = document.getElementById("sim-balance");
   const sendBtn = document.getElementById("send-sim");
   const toInput = document.getElementById("sim-to");
-  const amountInput = document.getElementById("sim-amount");
+  const amtInput = document.getElementById("sim-amount");
 
-  connectBtn?.addEventListener("click", async () => {
+  // CONNECT WALLET
+  connectBtn.addEventListener("click", async () => {
     try {
       await initWalletAndContract();
       alert("Wallet connected: " + userAddress);
-    } catch (e) {
-      alert("Error connecting wallet: " + (e.message || e));
+    } catch (err) {
+      console.error(err);
+      alert("Wallet error: " + err.message);
     }
   });
 
-  showSimBalanceBtn?.addEventListener("click", async () => {
+
+  // SHOW SIM BALANCE
+  showBalanceBtn.addEventListener("click", async () => {
     try {
-      if (!initialized) await initWalletAndContract();
+      await initWalletAndContract();
       const info = await getTokenInfo(userAddress);
       balanceEl.innerText = `${info.formatted} ${info.symbol}`;
+      console.log("SIM Balance:", info);
     } catch (err) {
-      console.error("SIM balance error", err);
-      alert("Error fetching SIM balance");
+      console.error("Balance error:", err);
+      alert("Error reading balance");
     }
   });
 
-  sendBtn?.addEventListener("click", async () => {
+
+  // SEND SIM TOKENS
+  sendBtn.addEventListener("click", async () => {
     try {
       const to = toInput.value.trim();
-      const amount = amountInput.value.trim();
-      if (!to || !amount) return alert("Enter address + amount");
-      const tx = await sendSim(to, amount);
-      alert("SIM sent. Tx: " + tx.hash);
-    } catch (e) {
-      console.error("sendSim error", e);
-      alert("Error sending SIM");
+      const amt = amtInput.value.trim();
+
+      if (!to || !amt) return alert("Enter recipient & amount!");
+
+      const tx = await sendSim(to, amt);
+      alert("SIM Sent! Tx: " + tx.hash);
+
+    } catch (err) {
+      console.error("sendSim error:", err);
+      alert("Error: " + err.message);
     }
   });
 
-}); 
-// --- END SIM HELPER ---
+});
 
-// --- START: Compatibility shim (fixes “token helper missing SIM”) ---
-(function(){
-  if (window.tokenHelper) {
-    console.log("tokenHelper already present");
-    return;
-  }
+
+// ------------------- COMPATIBILITY SHIM -------------------
+(function () {
+  if (window.tokenHelper) return;
 
   async function ensureInit() {
-    if (!initialized) {
-      if (typeof initWalletAndContract === "function") {
-        await initWalletAndContract();
-      }
-    }
+    if (!initialized) await initWalletAndContract();
   }
 
   window.tokenHelper = {
-    async getTokenInfo(address) {
+    async getTokenInfo(addr) {
       await ensureInit();
-      return await getTokenInfo(address);
+      return await getTokenInfo(addr);
     },
 
-    async getBalance(address) {
-      return await this.getTokenInfo(address);
+    async getBalance(addr) {
+      return await this.getTokenInfo(addr);
     },
 
-    async transfer(to, amount) {
+    async transfer(to, amt) {
       await ensureInit();
-      return await sendSim(to, amount);
+      return await sendSim(to, amt);
     }
   };
 
-  console.log("Compatibility shim installed (tokenHelper ready)");
+  console.log("tokenHelper shim installed");
 })();
-// --- END shim ---
