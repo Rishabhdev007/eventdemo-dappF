@@ -1,5 +1,5 @@
 // ------------------- SIM TOKEN SETTINGS -------------------
-const TOKEN_ADDRESS = "0xFd65C5871955aaDcd34955980eC9F28aA52378Ab"; // SIM on Sepolia
+const TOKEN_ADDRESS = "0x0d893ACe5174B2E88463F17976b299D9D0178210"; // SIM on Sepolia
 
 const MIN_ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
