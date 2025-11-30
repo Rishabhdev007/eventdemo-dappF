@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>EventDemo — dApp (Fixed)</title>
+    <title>EventDemo — dApp (Patched)</title>
     <style>
       :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
       body{max-width:980px;margin:28px auto;padding:18px;background:#fafafa;color:#111}
@@ -93,7 +93,6 @@
     <!-- ---------- token.js (SIM helper) - INLINE ---------- -->
     <script id="token-js">
     // token.js — SIM token helper for EventDemo (ethers v6 UMD compatible)
-    //
     // IMPORTANT: set TOKEN_ADDRESS to your SIM token *contract* address on Sepolia.
     // Do NOT put your wallet address here.
     const TOKEN_ADDRESS = "0xYour_SIM_TOKEN_CONTRACT_Address_here"; // <<--- REPLACE THIS
@@ -116,8 +115,15 @@
 
       async function makeProvider() {
         if (provider) return provider;
-        // Use Web3Provider (works well with MetaMask)
         if (!window.ethereum) throw new Error("MetaMask (window.ethereum) not found");
+        // Prefer BrowserProvider if available, otherwise Web3Provider
+        try {
+          if (typeof ethers !== 'undefined' && typeof ethers.BrowserProvider === 'function') {
+            provider = new ethers.BrowserProvider(window.ethereum);
+            return provider;
+          }
+        } catch (e) { /* ignore */ }
+        // Fallback to Web3Provider
         provider = new ethers.providers.Web3Provider(window.ethereum);
         return provider;
       }
@@ -125,16 +131,12 @@
       async function initReadonly() {
         if (initialized && simContract) return;
         await makeProvider();
-
-        // Validate TOKEN_ADDRESS (checksum) if possible
         try {
           if (typeof ethers.getAddress === "function") ethers.getAddress(TOKEN_ADDRESS);
         } catch (e) {
           console.error("TOKEN_ADDRESS invalid. Replace placeholder in token.js with real contract address.", e);
           throw e;
         }
-
-        // Create read-only contract (provider only)
         simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, provider);
         try { simDecimals = await simContract.decimals(); } catch (e) { simDecimals = 18; console.warn("Could not read decimals; defaulting to 18", e); }
         initialized = true;
@@ -143,7 +145,6 @@
       async function ensureSigner() {
         if (!signer) {
           await makeProvider();
-          // request accounts (will prompt if needed)
           await provider.send("eth_requestAccounts", []);
           signer = provider.getSigner();
         }
@@ -171,7 +172,6 @@
       async function transfer(to, amt) {
         try {
           if (!to || !amt) throw new Error("Missing to or amount");
-          // disallow ENS-like names on Sepolia to avoid resolveName errors
           if (typeof to === 'string' && to.includes('.')) {
             throw new Error('ENS names not supported for transfers on this network — use an address.');
           }
@@ -186,7 +186,6 @@
         }
       }
 
-      // Expose the public API
       window.simToken = {
         initReadonly,
         getTokenInfo,
@@ -201,7 +200,6 @@
     <!-- ---------- app.js (main dApp logic) - INLINE ---------- -->
     <script id="app-js">
     (async function(){
-      // ABI & initial values
       const abi = [
         "event ActionLogged(address indexed user, string message, uint256 timestamp)",
         "function ping() public",
@@ -209,7 +207,6 @@
         "function message() public view returns (string)"
       ];
 
-      // DOM elements
       const contractAddrEl = document.getElementById('contractAddr');
       let contractAddressRaw = (contractAddrEl && contractAddrEl.innerText) ? contractAddrEl.innerText.trim() : '';
       if (!contractAddressRaw) {
@@ -217,7 +214,6 @@
         contractAddressRaw = '';
       }
 
-      // Normalize & validate using ethers.getAddress (if available)
       let contractAddress;
       try {
         contractAddress = (typeof ethers.getAddress === 'function') ? ethers.getAddress(contractAddressRaw) : contractAddressRaw;
@@ -239,7 +235,7 @@
       const refreshEventsBtn = document.getElementById('refreshEvents');
       const clearEventsBtn = document.getElementById('clearEvents');
       const debugPre = document.getElementById('debug');
-      const simBalanceEl = document.getElementById('sim-balance'); // match index.html id
+      const simBalanceEl = document.getElementById('sim-balance');
       const showBalanceBtn = document.getElementById('show-sim-balance');
       const sendBtn = document.getElementById('send-sim');
       const simToInput = document.getElementById('sim-to');
@@ -274,23 +270,47 @@
         eventsDiv.prepend(el);
       }
 
-      // attach: create provider (read) and signer (write); create provider-backed contract for reads
+      // robust attach: try BrowserProvider, providers.Web3Provider, then ethers.Web3Provider
       async function attach(){
         if (!window.ethereum) throw new Error('MetaMask not found (window.ethereum missing).');
 
-        // Use Web3Provider for predictable behavior
-        provider = new ethers.providers.Web3Provider(window.ethereum);
+        // Try BrowserProvider (ethers v6)
+        try {
+          if (typeof ethers !== 'undefined' && typeof ethers.BrowserProvider === 'function') {
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            contract = new ethers.Contract(contractAddress, abi, provider);
+            logDebug('attach: using ethers.BrowserProvider', contractAddress);
+            return;
+          }
+        } catch (e) { console.warn('BrowserProvider attempt failed', e); }
 
-        // signer for writes
-        signer = provider.getSigner();
+        // Try ethers.providers.Web3Provider
+        try {
+          if (typeof ethers !== 'undefined' && ethers.providers && typeof ethers.providers.Web3Provider === 'function') {
+            provider = new ethers.providers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+            contract = new ethers.Contract(contractAddress, abi, provider);
+            logDebug('attach: using ethers.providers.Web3Provider', contractAddress);
+            return;
+          }
+        } catch (e) { console.warn('providers.Web3Provider attempt failed', e); }
 
-        // create read-only contract (provider runner)
-        contract = new ethers.Contract(contractAddress, abi, provider);
+        // Try direct ethers.Web3Provider (rare)
+        try {
+          if (typeof ethers !== 'undefined' && typeof ethers.Web3Provider === 'function') {
+            provider = new ethers.Web3Provider(window.ethereum);
+            signer = provider.getSigner();
+            contract = new ethers.Contract(contractAddress, abi, provider);
+            logDebug('attach: using ethers.Web3Provider', contractAddress);
+            return;
+          }
+        } catch (e) { console.warn('ethers.Web3Provider attempt failed', e); }
 
-        logDebug('attach: provider & contract ready (provider read-only)', contractAddress);
+        console.error('attach: No compatible ethers provider constructor found. window.ethers =', typeof ethers !== 'undefined' ? ethers : 'undefined');
+        throw new Error('No compatible ethers provider constructor found. Ensure ethers script is loaded before app code.');
       }
 
-      // Update SIM balance UI using token.js helper (window.simToken)
       async function updateSimBalance(address) {
         try {
           if (!simBalanceEl) return;
@@ -318,7 +338,6 @@
           await readCurrentMessage();
           await fetchPastEvents();
           listenEvents();
-          // update SIM balance right after connect
           await updateSimBalance(addr);
           logDebug('Connected', addr);
         } catch(e){
@@ -328,7 +347,6 @@
         }
       }
 
-      // sendPing uses a write contract connected to signer
       async function sendPing(){
         try{
           const writeContract = contract.connect(signer);
@@ -342,7 +360,6 @@
         }
       }
 
-      // doSetMessage uses a write contract connected to signer
       async function doSetMessage(){
         const txt = msgInput.value.trim();
         if(!txt){ toast('Enter a message first!'); return; }
@@ -353,7 +370,6 @@
           toast('setMessage tx: ' + receipt.transactionHash);
           msgInput.value = '';
           await readCurrentMessage();
-          // refresh SIM balance after action
           try { await updateSimBalance(window.ethereum.selectedAddress || (await signer.getAddress())); } catch(e){}
           logDebug('setMessage tx', receipt.transactionHash);
         }catch(e){
@@ -362,7 +378,6 @@
         }
       }
 
-      // readCurrentMessage uses the provider-backed contract for view calls
       async function readCurrentMessage(){
         try{
           const m = await contract.message();
@@ -374,7 +389,6 @@
         }
       }
 
-      // fetchPastEvents uses contract.filters and contract.interface.parseLog
       async function fetchPastEvents(){
         try{
           const filter = contract.filters.ActionLogged();
@@ -399,7 +413,6 @@
         }
       }
 
-      // SIM send handler (uses token.js transfer)
       async function sendSimHandler() {
         try {
           const to = simToInput.value.trim();
@@ -419,7 +432,6 @@
         }
       }
 
-      // wire up buttons
       if (document.getElementById('connect')) document.getElementById('connect').onclick = connectWallet;
       if (pingBtn) pingBtn.onclick = sendPing;
       if (setMsgBtn) setMsgBtn.onclick = doSetMessage;
@@ -438,7 +450,7 @@
       };
       if (sendBtn) sendBtn.onclick = sendSimHandler;
 
-      // attempt silent attach if already connected (selectedAddress available)
+      // silent attach if already connected
       if (window.ethereum && window.ethereum.selectedAddress) {
         try {
           await attach();
@@ -452,7 +464,7 @@
           try { await updateSimBalance(addr); } catch(e){}
           logDebug('Auto-attached to provider', addr);
         } catch (e) {
-          // ignore silent attach errors
+          // ignore
         }
       }
 
