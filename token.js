@@ -1,6 +1,6 @@
 // token.js — SIM token helper (ethers v6 UMD compatible)
-// Replace TOKEN_ADDRESS with your SIM token contract address on Sepolia
-const TOKEN_ADDRESS = "0x859d4e1340B20B2cD3ECa711ea1088784bB3F886"; // <<--- REPLACE THIS
+// If your SIM token contract is different, replace TOKEN_ADDRESS with that contract address.
+const TOKEN_ADDRESS = "0x859d4e1340B20B2cD3ECa711ea1088784bB3F886"; // <<--- REPLACE THIS if needed
 
 const SIM_ABI = [
   "function balanceOf(address) view returns (uint256)",
@@ -21,7 +21,6 @@ const SIM_ABI = [
     async ensureProvider() {
       if (this.provider) return;
       if (!window.ethereum) throw new Error("MetaMask (window.ethereum) not found");
-      // prefer BrowserProvider, fallback to Web3Provider
       if (ethers.BrowserProvider) {
         this.provider = new ethers.BrowserProvider(window.ethereum);
       } else {
@@ -32,7 +31,6 @@ const SIM_ABI = [
     async initReadonly() {
       if (this.contract) return;
       await this.ensureProvider();
-      // validate address
       try { if (typeof ethers.getAddress === 'function') ethers.getAddress(TOKEN_ADDRESS); } catch (e) {
         console.error("TOKEN_ADDRESS invalid. Replace with real contract address.", e);
         throw e;
