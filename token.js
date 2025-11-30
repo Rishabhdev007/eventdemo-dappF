@@ -1,10 +1,8 @@
-// token.js — SIM token helper for EventDemo (ethers v6 UMD compatible)
-//
-// IMPORTANT: set TOKEN_ADDRESS to your SIM token *contract* address on Sepolia.
-// Do NOT put your wallet address here.
+// token.js — SIM token helper (ethers v6 UMD compatible)
+// Replace TOKEN_ADDRESS with your SIM token contract address on Sepolia
 const TOKEN_ADDRESS = "0x859d4e1340B20B2cD3ECa711ea1088784bB3F886"; // <<--- REPLACE THIS
 
-const MIN_ERC20_ABI = [
+const SIM_ABI = [
   "function balanceOf(address) view returns (uint256)",
   "function decimals() view returns (uint8)",
   "function symbol() view returns (string)",
@@ -12,98 +10,69 @@ const MIN_ERC20_ABI = [
 ];
 
 (function () {
-  if (window.simToken) return; // already installed
+  if (window.simToken) return;
 
-  let provider = null;
-  let signer = null;
-  let simContract = null;
-  let simDecimals = 18;
-  let initialized = false;
+  const helper = {
+    provider: null,
+    signer: null,
+    contract: null,
+    decimals: 18,
 
-  async function makeProvider() {
-    if (provider) return provider;
-    // Prefer BrowserProvider if available, fallback to Web3Provider
-    try {
-      provider = (ethers && ethers.BrowserProvider) ? new ethers.BrowserProvider(window.ethereum) : new ethers.providers.Web3Provider(window.ethereum);
-    } catch (e) {
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-    }
-    return provider;
-  }
+    async ensureProvider() {
+      if (this.provider) return;
+      if (!window.ethereum) throw new Error("MetaMask (window.ethereum) not found");
+      // prefer BrowserProvider, fallback to Web3Provider
+      if (ethers.BrowserProvider) {
+        this.provider = new ethers.BrowserProvider(window.ethereum);
+      } else {
+        this.provider = new ethers.providers.Web3Provider(window.ethereum);
+      }
+    },
 
-  async function initReadonly() {
-    if (initialized && simContract) return;
-    if (!window.ethereum) throw new Error("MetaMask (window.ethereum) not found");
-    await makeProvider();
+    async initReadonly() {
+      if (this.contract) return;
+      await this.ensureProvider();
+      // validate address
+      try { if (typeof ethers.getAddress === 'function') ethers.getAddress(TOKEN_ADDRESS); } catch (e) {
+        console.error("TOKEN_ADDRESS invalid. Replace with real contract address.", e);
+        throw e;
+      }
+      this.contract = new ethers.Contract(TOKEN_ADDRESS, SIM_ABI, this.provider);
+      try { this.decimals = await this.contract.decimals(); } catch (e) { this.decimals = 18; }
+    },
 
-    // Validate TOKEN_ADDRESS
-    try {
-      // ethers.getAddress is available in v6 UMD as ethers.getAddress
-      if (typeof ethers.getAddress === "function") ethers.getAddress(TOKEN_ADDRESS);
-    } catch (e) {
-      console.error("TOKEN_ADDRESS invalid. Replace placeholder in token.js with real contract address.", e);
-      throw e;
-    }
+    async getSigner() {
+      await this.ensureProvider();
+      if (!this.signer) {
+        await this.provider.send("eth_requestAccounts", []);
+        this.signer = this.provider.getSigner();
+      }
+      return this.signer;
+    },
 
-    // Create read-only contract (provider only)
-    const readProvider = provider;
-    simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, readProvider);
-    try { simDecimals = await simContract.decimals(); } catch (e) { simDecimals = 18; console.warn("Could not read decimals; defaulting to 18", e); }
-    initialized = true;
-  }
-
-  async function ensureSigner() {
-    // ensure signer available for write ops
-    if (!signer) {
-      await makeProvider();
-      await provider.send("eth_requestAccounts", []); // will prompt if needed
-      signer = await provider.getSigner();
-    }
-    // create contract with signer for writes
-    if (!simContract) {
-      simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, provider);
-    }
-    return signer;
-  }
-
-  async function getTokenInfo(addr) {
-    try {
-      await initReadonly();
-      if (!addr) throw new Error("No address provided to getTokenInfo");
-      const raw = await simContract.balanceOf(addr);
-      const formatted = ethers.formatUnits(raw, simDecimals);
+    async getInfo(address) {
+      await this.initReadonly();
+      if (!address) throw new Error("Address required");
+      const raw = await this.contract.balanceOf(address);
+      const formatted = ethers.formatUnits(raw, this.decimals);
       let symbol = "SIM";
-      try { symbol = await simContract.symbol(); } catch (e) {}
-      return { raw, formatted, symbol, balance: formatted };
-    } catch (err) {
-      console.error("simToken.getTokenInfo error", err);
-      throw err;
-    }
-  }
+      try { symbol = await this.contract.symbol(); } catch (e) {}
+      return { raw, formatted, symbol };
+    },
 
-  async function transfer(to, amt) {
-    try {
-      if (!to || !amt) throw new Error("Missing to or amount");
-      await ensureSigner();
-      const contractWithSigner = simContract.connect(signer);
-      const amountParsed = ethers.parseUnits(amt.toString(), simDecimals);
-      const tx = await contractWithSigner.transfer(to, amountParsed);
-      // Return tx object (user can wait)
+    async transfer(to, amount) {
+      if (!to || !amount) throw new Error("Missing to or amount");
+      if (typeof to === 'string' && to.includes('.')) {
+        throw new Error("ENS names not supported on this network — use an address");
+      }
+      await this.getSigner();
+      const writeContract = this.contract.connect(this.signer);
+      const parsed = ethers.parseUnits(amount.toString(), this.decimals);
+      const tx = await writeContract.transfer(to, parsed);
       return tx;
-    } catch (err) {
-      console.error("simToken.transfer error", err);
-      throw err;
     }
-  }
-
-  // Expose the public API
-  window.simToken = {
-    initReadonly,
-    getTokenInfo,
-    transfer,
-    // helper to return decimals if needed
-    getDecimals: () => simDecimals,
   };
 
+  window.simToken = helper;
   console.log("simToken helper installed");
 })();
