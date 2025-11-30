@@ -3,280 +3,73 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>EventDemo — Patched dApp</title>
-
+<title>EventDemo — dApp (Separate files, patched)</title>
 <style>
   :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
   body{max-width:980px;margin:28px auto;padding:18px;background:#fafafa;color:#111}
-  header{display:flex;align-items:center;justify-content:space-between}
-  h1{font-size:20px;margin:0}
-  .card{border-radius:12px;padding:14px;margin-top:14px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+  .card{border-radius:12px;padding:14px;background:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
   button{padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
   button.primary{background:#2563eb;color:#fff}
-  button.ghost{background:transparent;border:1px solid #ccc}
-  input{padding:8px;border:1px solid #ddd;border-radius:6px}
   .events{max-height:300px;overflow-y:auto;border:1px solid #eee;padding:10px;border-radius:8px;background:#fff}
   .evt{padding:8px;border-bottom:1px dashed #eee}
   .small{color:#666;font-size:13px}
   pre{background:#f3f3f3;padding:12px;border-radius:8px;overflow:auto}
+  input{padding:8px;border:1px solid #ddd;border-radius:6px}
 </style>
 
-<!-- Ethers v6 UMD -->
+<!-- ethers v6 UMD -->
 <script src="https://cdn.jsdelivr.net/npm/ethers@6.8.0/dist/ethers.umd.min.js"></script>
 </head>
-
 <body>
-<div class="card">
+  <div class="card">
+    <header style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h2 style="margin:0">EventDemo dApp</h2>
+        <div class="small">Events • Message • SIM Token</div>
+      </div>
+      <div style="text-align:right">
+        <div id="walletStatus" class="small">Not connected</div>
+        <!-- <-- patched contract address below --> -->
+        <div id="contractAddr" class="small">0xb27A31f1b0AF2946B7F582768f03239b1eC07c2c</div>
+      </div>
+    </header>
 
-  <header>
-    <div>
-      <h2>EventDemo dApp (Patched)</h2>
-      <div class="small">Events • Messaging • SIM Token</div>
+    <hr>
+
+    <div style="margin-top:12px">
+      <button id="connect" class="primary">Connect Wallet</button>
+      <button id="refreshEvents" style="margin-left:8px">Refresh Events</button>
+      <button id="clearEvents" style="margin-left:8px">Clear</button>
     </div>
-    <div style="text-align:right">
-      <div id="walletStatus" class="small">Not connected</div>
-      <div id="contractAddr" class="small">0xE3e7fc9b468519B911c114F377C6d45e21Ac4284</div>
+
+    <h3 style="margin-top:14px">Write Message</h3>
+    <input id="msgInput" type="text" placeholder="Message" style="width:240px">
+    <button id="setMsgBtn" style="margin-left:8px">setMessage()</button>
+    <button id="pingBtn" style="margin-left:8px">ping()</button>
+
+    <h3 style="margin-top:14px">Current on-chain message</h3>
+    <div id="currentMessage" class="small">(not loaded)</div>
+    <button id="readMsg" style="margin-top:8px">Refresh message</button>
+
+    <h3 style="margin-top:14px">Event Logs</h3>
+    <div id="events" class="events"></div>
+
+    <h3 style="margin-top:14px">SIM Token</h3>
+    <button id="show-sim-balance">Show Balance</button>
+    <div style="margin-top:6px">Balance: <span id="sim-balance" class="small">0</span></div>
+
+    <div style="margin-top:8px">
+      <input id="sim-to" placeholder="Recipient address" style="width:260px">
+      <input id="sim-amount" placeholder="Amount" style="width:120px;margin-left:8px">
+      <button id="send-sim" style="margin-left:8px">Send SIM</button>
     </div>
-  </header>
 
-  <hr>
-
-  <button id="connect" class="primary">Connect Wallet</button>
-  <button id="refreshEvents" class="ghost">Refresh Events</button>
-  <button id="clearEvents" class="ghost">Clear</button>
-
-  <h3>Write Message</h3>
-  <input id="msgInput" type="text" placeholder="Message" style="width:240px">
-  <button id="setMsgBtn" class="primary">setMessage()</button>
-  <button id="pingBtn">ping()</button>
-
-  <h3>Current on-chain message</h3>
-  <div id="currentMessage" class="small">(not loaded)</div>
-  <button id="readMsg" class="ghost">Refresh message</button>
-
-  <h3>Event Logs</h3>
-  <div id="events" class="events"></div>
-
-  <h3>SIM Token</h3>
-  <button id="show-sim-balance">Show Balance</button>
-  <div style="margin-top:6px">
-    Balance: <span id="sim-balance" class="small">0</span>
+    <h3 style="margin-top:14px">Debug Log</h3>
+    <pre id="debug">Open Console for more logs.</pre>
   </div>
 
-  <input id="sim-to" placeholder="Recipient address" style="width:260px;margin-top:10px;">
-  <input id="sim-amount" placeholder="Amount" style="width:120px;margin-left:8px;">
-  <button id="send-sim" class="primary">Send SIM</button>
-
-  <h3>Debug Log</h3>
-  <pre id="debug">Open Console for more logs.</pre>
-
-</div>
-
-<!-- ---------------------------------------------- -->
-<!--             SIM TOKEN HELPER (INLINE)          -->
-<!-- ---------------------------------------------- -->
-<script>
-/* SET YOUR SIM TOKEN CONTRACT ADDRESS HERE */
-const TOKEN_ADDRESS = "0xYour_SIM_TOKEN_CONTRACT_Address_here";  // <<---- REQUIRED
-
-const SIM_ABI = [
-  "function balanceOf(address) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-  "function transfer(address to, uint256 amount) returns (bool)"
-];
-
-window.simToken = {
-  provider: null,
-  signer: null,
-  contract: null,
-  decimals: 18,
-
-  async ensureProvider() {
-    if (!window.ethereum) throw new Error("MetaMask missing");
-    if (this.provider) return;
-
-    if (ethers.BrowserProvider) {
-      this.provider = new ethers.BrowserProvider(window.ethereum);
-      return;
-    }
-    this.provider = new ethers.providers.Web3Provider(window.ethereum);
-  },
-
-  async init() {
-    await this.ensureProvider();
-    this.contract = new ethers.Contract(TOKEN_ADDRESS, SIM_ABI, this.provider);
-    try { this.decimals = await this.contract.decimals(); } catch {}
-  },
-
-  async getSigner() {
-    await this.ensureProvider();
-    await this.provider.send("eth_requestAccounts", []);
-    this.signer = await this.provider.getSigner();
-    return this.signer;
-  },
-
-  async getInfo(addr) {
-    await this.init();
-    const bal = await this.contract.balanceOf(addr);
-    let sym = "SIM";
-    try { sym = await this.contract.symbol(); } catch {}
-    return {
-      raw: bal,
-      formatted: ethers.formatUnits(bal, this.decimals),
-      symbol: sym
-    };
-  },
-
-  async transfer(to, amt) {
-    if (to.includes(".")) throw new Error("ENS not supported on Sepolia");
-    const signer = await this.getSigner();
-    const c = this.contract.connect(signer);
-    const parsed = ethers.parseUnits(amt, this.decimals);
-    return await c.transfer(to, parsed);
-  }
-};
-</script>
-
-<!-- ---------------------------------------------- -->
-<!--                  MAIN DAPP LOGIC               -->
-<!-- ---------------------------------------------- -->
-<script>
-const debug = (...a)=>{const d=document.getElementById('debug');d.textContent+=`\n${a.join(" ")}`;console.log(...a)};
-
-const abi = [
-  "event ActionLogged(address indexed user,string message,uint256 timestamp)",
-  "function ping() public",
-  "function setMessage(string) public",
-  "function message() view returns (string)"
-];
-
-let provider, signer, contract;
-let contractAddress = document.getElementById("contractAddr").innerText.trim();
-
-/* ------------ Universal provider loader (no more errors) ------------ */
-async function loadProvider() {
-  if (provider) return;
-  if (!window.ethereum) throw new Error("MetaMask missing.");
-
-  if (ethers.BrowserProvider) {
-    provider = new ethers.BrowserProvider(window.ethereum);
-    debug("Loaded BrowserProvider");
-  } else if (ethers.providers?.Web3Provider) {
-    provider = new ethers.providers.Web3Provider(window.ethereum);
-    debug("Loaded Web3Provider");
-  } else {
-    throw new Error("No supported ethers provider found");
-  }
-
-  contract = new ethers.Contract(contractAddress, abi, provider);
-}
-
-/* ------------------------ Connect Wallet --------------------------- */
-async function connectWallet() {
-  await loadProvider();
-  const accs = await window.ethereum.request({ method: "eth_requestAccounts" });
-  signer = await provider.getSigner();
-  document.getElementById("walletStatus").innerText = "Connected: " + accs[0];
-  debug("Connected:", accs[0]);
-
-  await readMessage();
-  await fetchEvents();
-  listenEvents();
-}
-
-/* ----------------------- Read On-chain Message --------------------- */
-async function readMessage() {
-  await loadProvider();
-  const msg = await contract.message();
-  document.getElementById("currentMessage").innerText = msg;
-  debug("Message:", msg);
-}
-
-/* -------------------------- Write Message --------------------------- */
-async function setMessage() {
-  await loadProvider();
-  if (!signer) signer = await provider.getSigner();
-  const c = contract.connect(signer);
-  const val = document.getElementById("msgInput").value.trim();
-  const tx = await c.setMessage(val);
-  await tx.wait();
-  debug("setMessage TX:", tx.hash);
-  readMessage();
-}
-
-/* ----------------------------- ping() ------------------------------- */
-async function ping() {
-  await loadProvider();
-  if (!signer) signer = await provider.getSigner();
-  const c = contract.connect(signer);
-  const tx = await c.ping();
-  await tx.wait();
-  debug("ping TX:", tx.hash);
-}
-
-/* ---------------------- Fetch Past Events --------------------------- */
-async function fetchEvents() {
-  await loadProvider();
-
-  const filter = contract.filters.ActionLogged();
-  const logs = await provider.getLogs(filter);
-
-  const iface = contract.interface;
-
-  const evDiv = document.getElementById("events");
-  evDiv.innerHTML = "";
-
-  for (const log of logs.reverse()) {
-    const parsed = iface.parseLog(log);
-    const item = document.createElement("div");
-    item.className = "evt";
-    item.innerHTML = `<b>${parsed.args.message}</b><br>
-      <span class='small'>${parsed.args.user} • ${new Date(Number(parsed.args.timestamp)*1000).toLocaleString()}</span>`;
-    evDiv.appendChild(item);
-  }
-  debug("Events loaded:", logs.length);
-}
-
-/* ---------------------- Live Event Listener ------------------------- */
-function listenEvents() {
-  contract.on("ActionLogged", (u,m,t) => {
-    const evDiv = document.getElementById("events");
-    const item = document.createElement("div");
-    item.className = "evt";
-    item.innerHTML = `<b>${m}</b><br>
-      <span class='small'>${u} • ${new Date(Number(t)*1000).toLocaleString()}</span>`;
-    evDiv.prepend(item);
-  });
-}
-
-/* ----------------------- SIM TOKEN ACTIONS -------------------------- */
-async function showSimBalance() {
-  const acc = window.ethereum.selectedAddress;
-  const info = await window.simToken.getInfo(acc);
-  document.getElementById("sim-balance").innerText = `${info.formatted} ${info.symbol}`;
-}
-
-async function sendSim() {
-  const to = document.getElementById("sim-to").value.trim();
-  const amt = document.getElementById("sim-amount").value.trim();
-  const tx = await window.simToken.transfer(to, amt);
-  debug("SIM sent:", tx.hash);
-  await tx.wait();
-  showSimBalance();
-}
-
-/* ----------------------- Bind UI Buttons ---------------------------- */
-document.getElementById("connect").onclick = connectWallet;
-document.getElementById("readMsg").onclick = readMessage;
-document.getElementById("setMsgBtn").onclick = setMessage;
-document.getElementById("pingBtn").onclick = ping;
-document.getElementById("refreshEvents").onclick = fetchEvents;
-document.getElementById("clearEvents").onclick = ()=> document.getElementById("events").innerHTML="";
-document.getElementById("show-sim-balance").onclick = showSimBalance;
-document.getElementById("send-sim").onclick = sendSim;
-
-</script>
-
+  <!-- app scripts -->
+  <script src="token.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
