@@ -2,7 +2,7 @@
 //
 // IMPORTANT: set TOKEN_ADDRESS to your SIM token *contract* address on Sepolia.
 // Do NOT put your wallet address here.
-const TOKEN_ADDRESS = "0xYour_SIM_TOKEN_CONTRACT_Address_here"; // <<--- REPLACE THIS
+const TOKEN_ADDRESS = "0x859d4e1340B20B2cD3ECa711ea1088784bB3F886"; // <<--- REPLACE THIS
 
 const MIN_ERC20_ABI = [
   "function balanceOf(address) view returns (uint256)",
