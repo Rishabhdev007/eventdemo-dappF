@@ -1,223 +1,109 @@
+// token.js — SIM token helper for EventDemo (ethers v6 UMD compatible)
+//
+// IMPORTANT: set TOKEN_ADDRESS to your SIM token *contract* address on Sepolia.
+// Do NOT put your wallet address here.
+const TOKEN_ADDRESS = "0xYour_SIM_TOKEN_CONTRACT_Address_here"; // <<--- REPLACE THIS
 
-// app.js - EventDemo DApp logic (patched to show SIM balance after connect)
-// Uses ethers v5 UMD (window.ethers) and token.js helper exposing window.simToken
+const MIN_ERC20_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+  "function transfer(address to, uint256 amount) returns (bool)"
+];
 
-(async function(){
-  // ABI & initial values
-  const abi = [
-    "event ActionLogged(address indexed user, string message, uint256 timestamp)",
-    "function ping() public",
-    "function setMessage(string _msg) public",
-    "function message() public view returns (string)"
-  ];
+(function () {
+  if (window.simToken) return; // already installed
 
-  // DOM elements
-  const contractAddrEl = document.getElementById('contractAddr');
-  let contractAddressRaw = (contractAddrEl && contractAddrEl.innerText) ? contractAddrEl.innerText.trim() : '';
-  if (!contractAddressRaw) {
-    console.error('No contract address found in #contractAddr');
-    contractAddressRaw = '';
-  }
+  let provider = null;
+  let signer = null;
+  let simContract = null;
+  let simDecimals = 18;
+  let initialized = false;
 
-  // Normalize & validate using ethers.utils.getAddress()
-  let contractAddress;
-  try {
-    contractAddress = ethers.utils.getAddress(contractAddressRaw);
-    contractAddrEl.innerText = contractAddress; // show checksummed
-  } catch (err) {
-    console.warn('Address checksum invalid or mixed-case. Falling back to lowercase and attempting to normalize. Original:', contractAddressRaw);
-    const lower = contractAddressRaw.toLowerCase();
+  async function makeProvider() {
+    if (provider) return provider;
+    // Prefer BrowserProvider if available, fallback to Web3Provider
     try {
-      contractAddress = ethers.utils.getAddress(lower);
-      contractAddrEl.innerText = contractAddress;
-    } catch (err2) {
-      console.error('Address still invalid after lowercasing. Using lowercase string as-is:', err2);
-      contractAddress = lower; // last resort
-    }
-  }
-
-  let provider, signer, contract;
-
-  const connectBtn = document.getElementById('connectBtn');
-  const walletStatus = document.getElementById('walletStatus');
-  const pingBtn = document.getElementById('pingBtn');
-  const setMsgBtn = document.getElementById('setMsgBtn');
-  const msgInput = document.getElementById('msgInput');
-  const eventsDiv = document.getElementById('events');
-  const readMsgBtn = document.getElementById('readMsg');
-  const refreshEventsBtn = document.getElementById('refreshEvents');
-  const clearEventsBtn = document.getElementById('clearEvents');
-  const debugPre = document.getElementById('debug');
-  // new SIM balance element (ensure index.html has <span id="simBalance">-</span>)
-  const simBalanceEl = document.getElementById('simBalance');
-
-  function short(a){ return a ? (a.slice(0,6) + "..." + a.slice(-4)) : '(no addr)'; }
-  function logDebug(...args){
-    try{
-      console.log(...args);
-      debugPre.innerText += '\\n' + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ');
-      debugPre.scrollTop = debugPre.scrollHeight;
-    }catch(e){}
-  }
-
-  function toast(msg){
-    try{
-      const t = document.createElement('div');
-      t.style.position='fixed'; t.style.right='16px'; t.style.bottom='16px'; t.style.zIndex=999999;
-      t.style.background='rgba(0,0,0,0.85)'; t.style.color='white'; t.style.padding='10px 12px'; t.style.borderRadius='8px';
-      t.style.boxShadow='0 6px 18px rgba(0,0,0,0.2)'; t.textContent = msg; document.body.appendChild(t);
-      setTimeout(()=> t.style.opacity='0',3500); setTimeout(()=> t.remove(),4200);
-    }catch(e){}
-  }
-
-  function addEventObj(e){
-    const el = document.createElement('div');
-    el.className = 'evt';
-    const time = new Date(Number(e.timestamp)*1000).toLocaleString();
-    el.innerHTML = `<div><strong>${e.message}</strong></div><div class="small">by ${short(e.user)} • ${time}</div>`;
-    eventsDiv.prepend(el);
-  }
-
-  async function attach(){
-    if (!window.ethereum) throw new Error('MetaMask not found (window.ethereum missing).');
-    provider = new ethers.providers.Web3Provider(window.ethereum);
-    signer = provider.getSigner();
-    contract = new ethers.Contract(contractAddress, abi, signer);
-    logDebug('attach: provider & contract ready', contractAddress);
-  }
-
-  // NEW: update SIM balance UI using token.js helper
-  async function updateSimBalance(address) {
-    try {
-      if (!simBalanceEl) return;
-      if (window.simToken && typeof window.simToken.getTokenInfo === 'function') {
-        const info = await window.simToken.getTokenInfo(address);
-        simBalanceEl.innerText = `${info.balance} ${info.symbol}`;
-      } else {
-        simBalanceEl.innerText = 'token helper missing';
-      }
+      provider = (ethers && ethers.BrowserProvider) ? new ethers.BrowserProvider(window.ethereum) : new ethers.providers.Web3Provider(window.ethereum);
     } catch (e) {
-      console.error('updateSimBalance error', e);
-      simBalanceEl && (simBalanceEl.innerText = 'error');
+      provider = new ethers.providers.Web3Provider(window.ethereum);
     }
+    return provider;
   }
 
-  async function connectWallet(){
-    try{
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      await attach();
-      walletStatus.innerText = 'Connected: ' + short(accounts[0]);
-      connectBtn.innerText = 'Connected';
-      connectBtn.disabled = true;
-      await readCurrentMessage();
-      await fetchPastEvents();
-      listenEvents();
-      // update SIM balance right after connect
-      await updateSimBalance(accounts[0]);
-      logDebug('Connected', accounts[0]);
-    } catch(e){
-      console.error('connectWallet error ->', e);
-      logDebug('connectWallet error ->', e.message || e);
-      toast('MetaMask connection failed (see console)');
-    }
-  }
+  async function initReadonly() {
+    if (initialized && simContract) return;
+    if (!window.ethereum) throw new Error("MetaMask (window.ethereum) not found");
+    await makeProvider();
 
-  async function sendPing(){
-    try{
-      const tx = await contract.ping();
-      const receipt = await tx.wait();
-      toast('Ping tx: ' + receipt.transactionHash);
-      logDebug('ping tx', receipt.transactionHash);
-    }catch(e){
-      console.error('sendPing error ->', e);
-      toast('Ping failed (see console)');
-    }
-  }
-
-  async function doSetMessage(){
-    const txt = msgInput.value.trim();
-    if(!txt){ toast('Enter a message first!'); return; }
-    try{
-      const tx = await contract.setMessage(txt);
-      const receipt = await tx.wait();
-      toast('setMessage tx: ' + receipt.transactionHash);
-      msgInput.value = '';
-      await readCurrentMessage();
-      // refresh SIM balance (in case msg triggers token transfer in other contracts)
-      if (window.ethereum && window.ethereum.selectedAddress) {
-        try { await updateSimBalance(window.ethereum.selectedAddress); } catch(e){}
-      }
-      logDebug('setMessage tx', receipt.transactionHash);
-    }catch(e){
-      console.error('doSetMessage error ->', e);
-      if (e && e.code === 'INVALID_ARGUMENT' && /checksum/i.test(String(e.message))) {
-        toast('Contract address checksum invalid - see console');
-      } else {
-        toast('setMessage failed (see console)');
-      }
-    }
-  }
-
-  async function readCurrentMessage(){
-    try{
-      const m = await contract.message();
-      document.getElementById('currentMessage').innerText = m || '(empty)';
-    }catch(e){
-      console.error('readCurrentMessage error ->', e);
-      toast('Read message failed (see console)');
-    }
-  }
-
-  async function fetchPastEvents(){
-    try{
-      const iface = new ethers.utils.Interface(abi);
-      const topic = iface.getEventTopic('ActionLogged');
-      const filter = { address: contractAddress, topics: [topic] };
-      const logs = await provider.getLogs(filter);
-      for(const log of logs.reverse()){
-        const parsed = iface.parseLog(log);
-        addEventObj({ user: parsed.args.user, message: parsed.args.message, timestamp: parsed.args.timestamp.toString() });
-      }
-    }catch(e){
-      console.error('fetchPastEvents error ->', e);
-      toast('Fetching events failed (see console)');
-    }
-  }
-
-  function listenEvents(){
+    // Validate TOKEN_ADDRESS
     try {
-      contract.on('ActionLogged', (user, message, timestamp) => {
-        addEventObj({ user, message, timestamp: timestamp.toString() });
-      });
+      // ethers.getAddress is available in v6 UMD as ethers.getAddress
+      if (typeof ethers.getAddress === "function") ethers.getAddress(TOKEN_ADDRESS);
     } catch (e) {
-      console.error('listenEvents error ->', e);
+      console.error("TOKEN_ADDRESS invalid. Replace placeholder in token.js with real contract address.", e);
+      throw e;
     }
+
+    // Create read-only contract (provider only)
+    const readProvider = provider;
+    simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, readProvider);
+    try { simDecimals = await simContract.decimals(); } catch (e) { simDecimals = 18; console.warn("Could not read decimals; defaulting to 18", e); }
+    initialized = true;
   }
 
-  // wire up buttons
-  connectBtn.onclick = connectWallet;
-  pingBtn.onclick = sendPing;
-  setMsgBtn.onclick = doSetMessage;
-  readMsgBtn.onclick = readCurrentMessage;
-  refreshEventsBtn.onclick = () => { eventsDiv.innerHTML = ''; fetchPastEvents(); };
-  clearEventsBtn.onclick = () => { eventsDiv.innerHTML = ''; };
+  async function ensureSigner() {
+    // ensure signer available for write ops
+    if (!signer) {
+      await makeProvider();
+      await provider.send("eth_requestAccounts", []); // will prompt if needed
+      signer = await provider.getSigner();
+    }
+    // create contract with signer for writes
+    if (!simContract) {
+      simContract = new ethers.Contract(TOKEN_ADDRESS, MIN_ERC20_ABI, provider);
+    }
+    return signer;
+  }
 
-  // attempt silent attach if already connected
-  if (window.ethereum && window.ethereum.selectedAddress) {
+  async function getTokenInfo(addr) {
     try {
-      await attach();
-      walletStatus.innerText = 'Connected (silent): ' + short(window.ethereum.selectedAddress);
-      connectBtn.innerText = 'Connected';
-      connectBtn.disabled = true;
-      await readCurrentMessage();
-      fetchPastEvents();
-      listenEvents();
-      // also update sim balance silently
-      try { await updateSimBalance(window.ethereum.selectedAddress); } catch(e){}
-      logDebug('Auto-attached to provider', window.ethereum.selectedAddress);
-    } catch (e) {
-      // ignore
+      await initReadonly();
+      if (!addr) throw new Error("No address provided to getTokenInfo");
+      const raw = await simContract.balanceOf(addr);
+      const formatted = ethers.formatUnits(raw, simDecimals);
+      let symbol = "SIM";
+      try { symbol = await simContract.symbol(); } catch (e) {}
+      return { raw, formatted, symbol, balance: formatted };
+    } catch (err) {
+      console.error("simToken.getTokenInfo error", err);
+      throw err;
     }
   }
 
+  async function transfer(to, amt) {
+    try {
+      if (!to || !amt) throw new Error("Missing to or amount");
+      await ensureSigner();
+      const contractWithSigner = simContract.connect(signer);
+      const amountParsed = ethers.parseUnits(amt.toString(), simDecimals);
+      const tx = await contractWithSigner.transfer(to, amountParsed);
+      // Return tx object (user can wait)
+      return tx;
+    } catch (err) {
+      console.error("simToken.transfer error", err);
+      throw err;
+    }
+  }
+
+  // Expose the public API
+  window.simToken = {
+    initReadonly,
+    getTokenInfo,
+    transfer,
+    // helper to return decimals if needed
+    getDecimals: () => simDecimals,
+  };
+
+  console.log("simToken helper installed");
 })();
