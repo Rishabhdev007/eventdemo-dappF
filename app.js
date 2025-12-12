@@ -1,64 +1,106 @@
 // -------------------------------
-// GLOBAL VARIABLES
+// IMPORT ETHERS (for V6)
 // -------------------------------
 import { ethers } from "./ethers.min.js";
 
+// -------------------------------
+// GLOBAL VARIABLES
+// -------------------------------
 let provider;
 let signer;
 let contract;
 
-const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS_HERE";  // <--- PUT YOUR ADDRESS
-const CONTRACT_ABI = [                                   // <--- PUT YOUR ABI
-    {
-        "inputs": [],
-        "name": "message",
-        "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
-        "stateMutability": "view",
-        "type": "function"
-    },
+// -------------------------------
+// CONTRACT DETAILS
+// -------------------------------
+const CONTRACT_ADDRESS = "0x28ee03ECB8e4d91325b3065e993A79F06aEf4a75";
+
+const CONTRACT_ABI = [
     {
         "anonymous": false,
         "inputs": [
-            { "indexed": false, "internalType": "address", "name": "user", "type": "address" },
-            { "indexed": false, "internalType": "string", "name": "newMessage", "type": "string" }
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "string",
+                "name": "action",
+                "type": "string"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "timestamp",
+                "type": "uint256"
+            }
         ],
-        "name": "MessageChanged",
+        "name": "ActionLogged",
         "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "ping",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "string",
+                "name": "_msg",
+                "type": "string"
+            }
+        ],
+        "name": "setMessage",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "message",
+        "outputs": [
+            {
+                "internalType": "string",
+                "name": "",
+                "type": "string"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
     }
 ];
 
-
 // -------------------------------
-// 1. INITIALIZE WALLET + CONTRACT
+// 1. INITIALIZE WALLET & CONTRACT
 // -------------------------------
-
 async function init() {
     try {
-        console.log("Using BrowserProvider");
-
         provider = new ethers.BrowserProvider(window.ethereum);
+
         signer = await provider.getSigner();
+        console.log("Connected wallet:", await signer.getAddress());
 
-        // Check network
-        const network = await provider.getNetwork();
-        console.log("Connected network:", network);
-
-        // Check contract exists
         const code = await provider.getCode(CONTRACT_ADDRESS);
+
         if (code === "0x") {
-            throw new Error("❌ No contract deployed at this address on this network.");
+            throw new Error("❌ ERROR: No contract deployed at this address!");
         }
 
-        // Create contract instance
         contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-        // Make available for console debugging
+        // Make available in browser console
         window.contract = contract;
 
         console.log("Contract loaded:", contract);
 
     } catch (err) {
-        console.error("init() error", err);
+        console.error("INIT ERROR:", err);
     }
 }
 
@@ -66,24 +108,45 @@ init();
 
 
 // -------------------------------
-// 2. READ MESSAGE FUNCTION
+// 2. READ MESSAGE
 // -------------------------------
 async function readMessage() {
     try {
-        if (!contract) throw new Error("Contract not initialized yet.");
+        const msg = await contract.message();
+        console.log("Current message:", msg);
+        return msg;
+    } catch (err) {
+        console.error("readMessage error:", err);
+    }
+}
 
-        // Simulate call
-        const raw = await provider.call({
-            to: CONTRACT_ADDRESS,
-            data: contract.interface.encodeFunctionData("message")
-        });
+window.readMessage = readMessage;
 
-        console.log("RAW returned data:", raw);
 
-        if (raw === "0x") {
-            throw new Error("Contract returned empty data. Wrong ABI or function missing.");
-        }
+// -------------------------------
+// 3. SET MESSAGE
+// -------------------------------
+async function setMessage(newMsg) {
+    try {
+        const tx = await contract.setMessage(newMsg);
+        console.log("TX sent:", tx.hash);
 
-        // Decode safely
-        const decoded = contract.interface.decodeFunctionResult("message", raw);
-        console.log("De
+        await tx.wait();
+        console.log("Message updated!");
+    } catch (err) {
+        console.error("setMessage error:", err);
+    }
+}
+
+window.setMessage = setMessage;
+
+
+// -------------------------------
+// 4. PING FUNCTION
+// -------------------------------
+async function ping() {
+    try {
+        const tx = await contract.ping();
+        console.log("Ping TX:", tx.hash);
+
+        awa
